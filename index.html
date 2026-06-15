@@ -166,7 +166,7 @@ body{font-family:var(--sans);background:var(--bg-raised);color:var(--text);min-h
 .cam-wrap{max-width:640px;margin:0 auto}
 .cam-box{position:relative;width:100%;border-radius:var(--radius-lg);overflow:hidden;background:#000;border:1px solid var(--border);aspect-ratio:16/10}
 #cam-video{width:100%;height:100%;object-fit:cover;display:block;transform:scaleX(-1)}
-#cam-overlay{position:absolute;inset:0;width:100%;height:100%;transform:scaleX(-1)}
+#cam-overlay{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transform:scaleX(-1)}
 .cam-error{display:none;flex-direction:column;align-items:center;justify-content:center;gap:12px;position:absolute;inset:0;background:#fff}
 .cam-error svg{width:32px;height:32px;stroke:var(--text-4);fill:none;stroke-width:1.5}
 .cam-error p{font-size:.82rem;color:var(--text-3);text-align:center;max-width:280px;line-height:1.5}
@@ -208,7 +208,7 @@ body{font-family:var(--sans);background:var(--bg-raised);color:var(--text);min-h
 @media(max-width:560px){.scan3d-container{grid-template-columns:1fr}}
 .scan3d-preview{position:relative;width:100%;aspect-ratio:4/3;border-radius:var(--radius-lg);overflow:hidden;background:#000;border:1px solid var(--border)}
 .scan3d-preview video{width:100%;height:100%;object-fit:cover;transform:scaleX(-1)}
-.scan3d-preview canvas{position:absolute;inset:0;width:100%;height:100%;transform:scaleX(-1)}
+.scan3d-preview canvas{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transform:scaleX(-1)}
 .scan3d-laser{position:absolute;left:0;right:0;height:2px;background:var(--accent);opacity:.4;top:0;pointer-events:none;display:none}
 .scan3d-preview.scanning .scan3d-laser{display:block;animation:scanMove 2.5s ease-in-out infinite}
 @keyframes scanMove{0%{top:0%}50%{top:100%}100%{top:0%}}
@@ -540,12 +540,30 @@ function setEmp(a){localStorage.setItem(LS_EMP,JSON.stringify(a))}
 function getAtt(){try{return JSON.parse(localStorage.getItem(LS_ATT))||[]}catch{return[]}}
 function setAtt(a){localStorage.setItem(LS_ATT,JSON.stringify(a))}
 function toLabeled(){
-  return cachedEmployees.map(e => {
-    const descList = e.descriptors 
-      ? e.descriptors.map(d => new Float32Array(d)) 
-      : (e.descriptorArray ? [new Float32Array(e.descriptorArray)] : []);
-    return new faceapi.LabeledFaceDescriptors(e.name, descList);
+  const list = [];
+  cachedEmployees.forEach(e => {
+    try {
+      const descList = [];
+      if (e.descriptors && Array.isArray(e.descriptors)) {
+        e.descriptors.forEach(d => {
+          if (d && (d.length === 128 || d.byteLength === 512)) {
+            descList.push(new Float32Array(d));
+          }
+        });
+      } else if (e.descriptorArray) {
+        descList.push(new Float32Array(e.descriptorArray));
+      }
+      
+      if (descList.length > 0) {
+        list.push(new faceapi.LabeledFaceDescriptors(e.name, descList));
+      } else {
+        console.warn('Employee ' + e.name + ' has no valid descriptors. Skipping.');
+      }
+    } catch (err) {
+      console.error('Error parsing descriptors for ' + e.name, err);
+    }
   });
+  return list;
 }
 
 /* ── date display ── */
@@ -1391,7 +1409,21 @@ function stopCam(){
   $('btn-start-cam').style.display='';$('btn-stop-cam').style.display='none';
   $('cam-stat').innerHTML='<span class="dot"></span>Camera off';
 }
-function detLoop(){if(!detecting)return;rafId=requestAnimationFrame(async()=>{const now=performance.now();if(now-lastDet>=DET_MS){lastDet=now;await runDet();}detLoop();})}
+function detLoop(){
+  if(!detecting)return;
+  rafId=requestAnimationFrame(async()=>{
+    const now=performance.now();
+    if(now-lastDet>=DET_MS){
+      lastDet=now;
+      try {
+        await runDet();
+      } catch (err) {
+        console.error('runDet error:', err);
+      }
+    }
+    detLoop();
+  });
+}
 
 async function runDet(){
   if(!camV.videoWidth)return;
