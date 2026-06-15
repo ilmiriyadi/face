@@ -1,0 +1,1612 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FaceCheck — Attendance System</title>
+<meta name="description" content="Browser-based face recognition attendance system with employee registration and live webcam tracking.">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#ffffff;
+  --bg-raised:#f9fafb;
+  --bg-card:#ffffff;
+  --bg-input:#f3f4f6;
+  --border:#e5e7eb;
+  --border-hover:#d1d5db;
+  --accent:#2563eb;
+  --accent-hover:#1d4ed8;
+  --accent-soft:rgba(37,99,235,.06);
+  --accent-mid:rgba(37,99,235,.12);
+  --green:#16a34a;
+  --green-soft:rgba(22,163,74,.06);
+  --red:#dc2626;
+  --red-soft:rgba(220,38,38,.05);
+  --text:#111827;
+  --text-2:#4b5563;
+  --text-3:#6b7280;
+  --text-4:#9ca3af;
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+  --sans:"DM Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  --radius:6px;
+  --radius-lg:8px;
+  --radius-xl:10px;
+  --ease:cubic-bezier(.4,0,.2,1);
+}
+html{font-size:14px}
+body{font-family:var(--sans);background:var(--bg-raised);color:var(--text);min-height:100vh;-webkit-font-smoothing:antialiased}
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar{width:6px;height:6px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:#d1d5db;border-radius:3px}
+::-webkit-scrollbar-thumb:hover{background:#9ca3af}
+
+/* ── Loading ── */
+#loading-overlay{position:fixed;inset:0;background:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:9999;transition:opacity .3s,visibility .3s}
+#loading-overlay.done{opacity:0;visibility:hidden;pointer-events:none}
+.ld-spinner{width:28px;height:28px;border:2.5px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .7s linear infinite;margin-bottom:16px}
+@keyframes spin{to{transform:rotate(360deg)}}
+#ld-status{font-family:var(--mono);font-size:.75rem;color:var(--text-3)}
+#ld-error{display:none;text-align:center}
+#ld-error p{font-family:var(--mono);font-size:.78rem;color:var(--red);margin-bottom:16px;max-width:340px;line-height:1.5}
+#ld-error button{font-family:var(--sans);font-size:.78rem;padding:6px 16px;border:1px solid var(--red);background:#fff;color:var(--red);border-radius:var(--radius);cursor:pointer}
+#ld-error button:hover{background:var(--red-soft)}
+
+/* ── Shell ── */
+.shell{max-width:960px;margin:0 auto;padding:24px 20px 48px}
+
+/* ── Header ── */
+.header{display:flex;align-items:center;justify-content:space-between;padding-bottom:16px;border-bottom:1px solid var(--border);margin-bottom:20px}
+.brand{display:flex;align-items:center;gap:10px}
+.brand-icon{width:32px;height:32px;background:var(--accent);border-radius:8px;display:flex;align-items:center;justify-content:center}
+.brand-icon svg{width:17px;height:17px;fill:none;stroke:#fff;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.brand-name{font-size:1rem;font-weight:600;color:var(--text)}
+.header-right{font-family:var(--mono);font-size:.65rem;color:var(--text-4)}
+
+/* ── Tabs ── */
+.tabs{display:flex;gap:0;margin-bottom:24px;border-bottom:1px solid var(--border)}
+.tab{font-family:var(--sans);font-size:.85rem;font-weight:500;padding:8px 16px;background:none;border:none;color:var(--text-3);cursor:pointer;position:relative;transition:color .15s}
+.tab:hover{color:var(--text-2)}
+.tab.on{color:var(--text)}
+.tab.on::after{content:'';position:absolute;bottom:-1px;left:0;right:0;height:2px;background:var(--accent)}
+.tab:disabled{opacity:.35;cursor:not-allowed}
+.tab:disabled:hover{color:var(--text-3)}
+
+.panel{display:none;animation:panelIn .2s var(--ease)}
+.panel.on{display:block}
+@keyframes panelIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+
+/* ── Cards ── */
+.card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-lg);padding:20px}
+.card-title{font-family:var(--mono);font-size:.7rem;font-weight:500;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:14px}
+
+/* ── Form ── */
+.field{display:flex;flex-direction:column;gap:4px}
+.field label{font-size:.78rem;font-weight:500;color:var(--text-2)}
+.field input[type="text"],.field input[type="date"]{font-family:var(--sans);font-size:.88rem;padding:8px 10px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);outline:none;transition:border-color .15s}
+.field input:focus{border-color:var(--accent)}
+
+/* ── Buttons ── */
+.btn{font-family:var(--sans);font-size:.8rem;font-weight:500;padding:7px 14px;border-radius:var(--radius);cursor:pointer;transition:all .15s;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.btn-fill{background:var(--accent);border:1px solid var(--accent);color:#fff}
+.btn-fill:hover{background:var(--accent-hover);border-color:var(--accent-hover)}
+.btn-fill:disabled{opacity:.4;cursor:not-allowed}
+.btn-outline{background:#fff;border:1px solid var(--border);color:var(--text-2)}
+.btn-outline:hover{border-color:var(--border-hover);color:var(--text);background:var(--bg-raised)}
+.btn-danger{background:#fff;border:1px solid var(--border);color:var(--red)}
+.btn-danger:hover{background:var(--red-soft);border-color:#fca5a5}
+.btn-sm{padding:5px 10px;font-size:.75rem}
+.btn-icon{width:28px;height:28px;padding:0;display:flex;align-items:center;justify-content:center;border-radius:var(--radius);background:none;border:1px solid transparent;color:var(--text-4);cursor:pointer;transition:.15s}
+.btn-icon:hover{border-color:var(--border);color:var(--text-2);background:var(--bg-raised)}
+.btn-icon.danger:hover{border-color:#fca5a5;color:var(--red);background:var(--red-soft)}
+
+/* ── Register Section ── */
+.register-layout{display:grid;grid-template-columns:1fr 240px;gap:20px}
+@media(max-width:768px){.register-layout{grid-template-columns:1fr}}
+.reg-left{display:flex;flex-direction:column;gap:14px}
+.reg-name-row{display:flex;gap:10px;align-items:flex-end}
+.reg-name-row .field{flex:1}
+
+/* method toggle */
+.method-toggle{display:flex;gap:0;background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
+.method-btn{flex:1;font-family:var(--sans);font-size:.78rem;font-weight:500;padding:7px 10px;background:none;border:none;color:var(--text-3);cursor:pointer;transition:.15s;text-align:center}
+.method-btn.on{background:#fff;color:var(--accent);box-shadow:0 1px 2px rgba(0,0,0,.06)}
+.method-btn:hover:not(.on){color:var(--text-2)}
+
+/* upload zone */
+.upload-zone{border:1.5px dashed var(--border);border-radius:var(--radius-lg);padding:24px 16px;text-align:center;cursor:pointer;transition:border-color .15s;position:relative}
+.upload-zone:hover{border-color:var(--border-hover);background:var(--bg-raised)}
+.upload-zone input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
+.upload-zone .uz-icon{font-size:1.2rem;margin-bottom:4px}
+.upload-zone .uz-text{font-size:.8rem;color:var(--text-2)}
+.upload-zone .uz-hint{font-size:.7rem;color:var(--text-4);margin-top:4px}
+
+/* capture zone */
+.capture-zone{display:none;flex-direction:column;gap:10px}
+.capture-zone.on{display:flex}
+.capture-preview{position:relative;width:100%;aspect-ratio:4/3;border-radius:var(--radius-lg);overflow:hidden;background:#000;border:1px solid var(--border)}
+.capture-preview video{width:100%;height:100%;object-fit:cover;transform:scaleX(-1)}
+.capture-preview canvas{display:none}
+.capture-actions{display:flex;gap:8px;justify-content:center}
+.capture-note{font-size:.7rem;color:var(--text-4);text-align:center}
+
+/* photo strip */
+.photo-strip{display:flex;gap:6px;flex-wrap:wrap;min-height:48px;align-items:center}
+.photo-strip:empty::after{content:'No photos yet';font-size:.75rem;color:var(--text-4)}
+.photo-thumb{position:relative;width:48px;height:48px;border-radius:var(--radius);overflow:hidden;border:1px solid var(--border)}
+.photo-thumb img{width:100%;height:100%;object-fit:cover}
+.photo-thumb .pt-remove{position:absolute;top:2px;right:2px;width:14px;height:14px;border-radius:50%;background:rgba(0,0,0,.6);border:none;color:#fff;font-size:9px;cursor:pointer;display:flex;align-items:center;justify-content:center;opacity:0;transition:.15s}
+.photo-thumb:hover .pt-remove{opacity:1}
+.photo-count{font-family:var(--mono);font-size:.7rem;color:var(--text-4)}
+
+/* right: preview card */
+.reg-preview{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;text-align:center;min-height:240px}
+.reg-avatar{width:80px;height:80px;border-radius:50%;background:var(--bg-input);border:2px solid var(--border);display:flex;align-items:center;justify-content:center;overflow:hidden}
+.reg-avatar img{width:100%;height:100%;object-fit:cover}
+.reg-avatar svg{width:30px;height:30px;stroke:var(--text-4);fill:none;stroke-width:1.5}
+.reg-preview-name{font-weight:600;font-size:.95rem;color:var(--text);min-height:1.3em}
+.reg-preview-count{font-family:var(--mono);font-size:.7rem;color:var(--text-4)}
+
+/* ── Employee Grid ── */
+.emp-section-head{display:flex;align-items:center;justify-content:space-between;margin-top:24px;margin-bottom:12px}
+.emp-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px}
+.emp-card{background:#fff;border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden;transition:border-color .15s}
+.emp-card:hover{border-color:var(--border-hover)}
+.emp-card-photo{width:100%;aspect-ratio:1;object-fit:cover;display:block;background:var(--bg-input)}
+.emp-card-body{padding:10px 12px;display:flex;align-items:center;justify-content:space-between}
+.emp-card-name{font-size:.82rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100px}
+.emp-empty{padding:40px 20px;text-align:center;color:var(--text-4);font-size:.85rem;border:1px dashed var(--border);border-radius:var(--radius-lg)}
+.emp-empty span{font-size:1.4rem;display:block;margin-bottom:6px;opacity:.4}
+
+/* ── Camera Panel ── */
+.cam-wrap{max-width:640px;margin:0 auto}
+.cam-box{position:relative;width:100%;border-radius:var(--radius-lg);overflow:hidden;background:#000;border:1px solid var(--border);aspect-ratio:16/10}
+#cam-video{width:100%;height:100%;object-fit:cover;display:block;transform:scaleX(-1)}
+#cam-overlay{position:absolute;inset:0;width:100%;height:100%;transform:scaleX(-1)}
+.cam-error{display:none;flex-direction:column;align-items:center;justify-content:center;gap:12px;position:absolute;inset:0;background:#fff}
+.cam-error svg{width:32px;height:32px;stroke:var(--text-4);fill:none;stroke-width:1.5}
+.cam-error p{font-size:.82rem;color:var(--text-3);text-align:center;max-width:280px;line-height:1.5}
+.cam-bar{display:flex;justify-content:center;gap:8px;margin-top:12px}
+.cam-status{text-align:center;margin-top:8px;font-family:var(--mono);font-size:.7rem;color:var(--text-4);display:flex;align-items:center;justify-content:center;gap:6px}
+.dot{width:6px;height:6px;border-radius:50%;background:var(--text-4);flex-shrink:0}
+.dot.live{background:var(--green);animation:dotPulse 2s infinite}
+@keyframes dotPulse{0%,100%{opacity:1}50%{opacity:.3}}
+
+/* ── Log Table ── */
+.log-bar{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:14px}
+.log-bar .spacer{flex:1}
+.tbl-wrap{overflow-x:auto}
+.tbl{width:100%;border-collapse:collapse}
+.tbl thead th{font-family:var(--mono);font-size:.68rem;font-weight:500;color:var(--text-4);letter-spacing:.06em;text-transform:uppercase;text-align:left;padding:8px 12px;border-bottom:1px solid var(--border)}
+.tbl tbody tr{transition:background .1s}
+.tbl tbody tr:hover{background:var(--accent-soft)}
+.tbl tbody td{padding:8px 12px;color:var(--text-2);font-variant-numeric:tabular-nums;border-bottom:1px solid #f3f4f6}
+.tbl tbody tr:last-child td{border-bottom:none}
+.tbl tbody td:first-child{color:var(--text);font-weight:500}
+.tbl .no-rows{text-align:center;padding:36px 12px;color:var(--text-4)}
+
+/* ── Toast ── */
+#toasts{position:fixed;bottom:20px;right:20px;display:flex;flex-direction:column-reverse;gap:6px;z-index:8000;pointer-events:none}
+.toast{font-family:var(--sans);font-size:.8rem;font-weight:500;padding:10px 16px;background:#fff;border:1px solid #bbf7d0;border-radius:var(--radius);color:var(--green);box-shadow:0 4px 12px rgba(0,0,0,.08);animation:tIn .2s var(--ease);pointer-events:auto}
+.toast.out{animation:tOut .15s var(--ease) forwards}
+@keyframes tIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+@keyframes tOut{to{opacity:0;transform:translateY(4px)}}
+
+/* ── Processing ── */
+#proc{display:none;position:fixed;inset:0;background:rgba(255,255,255,.85);z-index:7000;flex-direction:column;align-items:center;justify-content:center}
+#proc.on{display:flex}
+#proc .ld-spinner{margin-bottom:12px}
+#proc p{font-family:var(--mono);font-size:.76rem;color:var(--text-3)}
+
+/* ── 3D Scan Zone ── */
+.scan3d-zone{display:flex;flex-direction:column;gap:12px}
+.scan3d-container{display:grid;grid-template-columns:1.4fr 1fr;gap:12px}
+@media(max-width:560px){.scan3d-container{grid-template-columns:1fr}}
+.scan3d-preview{position:relative;width:100%;aspect-ratio:4/3;border-radius:var(--radius-lg);overflow:hidden;background:#000;border:1px solid var(--border)}
+.scan3d-preview video{width:100%;height:100%;object-fit:cover;transform:scaleX(-1)}
+.scan3d-preview canvas{position:absolute;inset:0;width:100%;height:100%;transform:scaleX(-1)}
+.scan3d-laser{position:absolute;left:0;right:0;height:2px;background:var(--accent);opacity:.4;top:0;pointer-events:none;display:none}
+.scan3d-preview.scanning .scan3d-laser{display:block;animation:scanMove 2.5s ease-in-out infinite}
+@keyframes scanMove{0%{top:0%}50%{top:100%}100%{top:0%}}
+.scan3d-sidebar{display:flex;flex-direction:column;gap:8px}
+.scan3d-hologram-card{background:#fff;border:1px solid var(--border);border-radius:var(--radius-lg);padding:12px;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.scan3d-hologram-card canvas{background:#f9fafb;border:1px solid var(--border);border-radius:var(--radius)}
+.scan3d-steps{display:flex;flex-direction:column;gap:2px;background:#fff;border:1px solid var(--border);border-radius:var(--radius-lg);padding:10px}
+.scan3d-step{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:var(--radius);font-family:var(--mono);font-size:.75rem;color:var(--text-4);transition:all .15s}
+.scan3d-step.active{color:var(--accent);background:var(--accent-soft)}
+.scan3d-step.done{color:var(--green);background:var(--green-soft)}
+.step-dot{width:6px;height:6px;border-radius:50%;background:var(--border);transition:all .15s}
+.scan3d-step.active .step-dot{background:var(--accent)}
+.scan3d-step.done .step-dot{background:var(--green)}
+@keyframes pulseScan{0%{opacity:.5}100%{opacity:1}}
+</style>
+</head>
+<body>
+
+<div id="loading-overlay">
+  <div class="ld-spinner"></div>
+  <div id="ld-status">Loading face detector…</div>
+  <div id="ld-error">
+    <p id="ld-error-msg">Failed to load face detection models. Check your connection.</p>
+    <button onclick="location.reload()">Reload</button>
+  </div>
+</div>
+
+<div id="proc">
+  <div class="ld-spinner"></div>
+  <p id="proc-text">Analyzing…</p>
+</div>
+
+<div id="toasts"></div>
+
+<div class="shell">
+  <header class="header">
+    <div class="brand">
+      <div class="brand-icon">
+        <svg viewBox="0 0 24 24"><path d="M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z"/><path d="M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/><path d="M21 21v-2a4 4 0 0 0-3-3.87"/></svg>
+      </div>
+      <span class="brand-name">FaceCheck</span>
+      <span id="db-status-badge" style="font-family:var(--mono);font-size:.65rem;padding:2px 6px;border-radius:4px;background:var(--border);color:var(--text-3);margin-left:8px;display:inline-flex;align-items:center;gap:4px"><span style="width:5px;height:5px;border-radius:50%;background:var(--text-4)"></span>Local Mode</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:12px">
+      <button class="btn-icon" id="btn-db-settings" title="Database Settings" style="color:var(--text-2)">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      </button>
+      <div class="header-right" id="header-date"></div>
+    </div>
+  </header>
+
+  <nav class="tabs" role="tablist">
+    <button class="tab on" data-t="employees" id="t-emp">Employees</button>
+    <button class="tab" data-t="camera" id="t-cam" disabled>Attendance</button>
+    <button class="tab" data-t="logs" id="t-log">Logs</button>
+  </nav>
+
+  <!-- ═══ EMPLOYEES ═══ -->
+  <section class="panel on" id="p-employees">
+    <div class="card">
+      <div class="card-title">Register Employee</div>
+      <div class="register-layout">
+        <div class="reg-left">
+          <div class="reg-name-row">
+            <div class="field">
+              <label for="r-name">Full Name</label>
+              <input type="text" id="r-name" placeholder="Enter employee name" autocomplete="off">
+            </div>
+          </div>
+
+          <div class="method-toggle">
+            <button class="method-btn on" data-m="upload" id="m-upload">Upload</button>
+            <button class="method-btn" data-m="capture" id="m-capture">Camera</button>
+            <button class="method-btn" data-m="scan3d" id="m-scan3d">3D Scan</button>
+          </div>
+
+          <!-- Upload -->
+          <div class="upload-zone" id="upload-zone">
+            <input type="file" id="r-files" accept="image/*" multiple>
+            <div class="uz-icon">📁</div>
+            <div class="uz-text">Drop photos or click to browse</div>
+            <div class="uz-hint">1–5 clear face photos · JPG, PNG</div>
+          </div>
+
+          <!-- Capture -->
+          <div class="capture-zone" id="capture-zone">
+            <div class="capture-preview">
+              <video id="cap-video" autoplay muted playsinline></video>
+              <canvas id="cap-canvas"></canvas>
+            </div>
+            <div class="capture-actions">
+              <button class="btn btn-outline btn-sm" id="btn-open-cap">Open Camera</button>
+              <button class="btn btn-fill btn-sm" id="btn-snap" style="display:none">Capture</button>
+              <button class="btn btn-outline btn-sm" id="btn-close-cap" style="display:none">Close</button>
+            </div>
+            <div class="capture-note">Position face in frame, take 1–5 shots from different angles</div>
+          </div>
+
+          <!-- 3D Scan -->
+          <div class="scan3d-zone" id="scan3d-zone" style="display:none">
+            <div class="scan3d-container">
+              <div class="scan3d-preview" id="scan3d-preview">
+                <video id="scan-video" autoplay muted playsinline></video>
+                <canvas id="scan-overlay"></canvas>
+                <div class="scan3d-laser"></div>
+              </div>
+              <div class="scan3d-sidebar">
+                <div class="scan3d-hologram-card">
+                  <div class="card-title" style="margin-bottom:8px">Mesh Preview</div>
+                  <canvas id="scan-hologram" width="150" height="150"></canvas>
+                </div>
+                <div class="scan3d-steps">
+                  <div class="scan3d-step" id="step-front"><span class="step-dot"></span><span>Front</span></div>
+                  <div class="scan3d-step" id="step-left"><span class="step-dot"></span><span>Left</span></div>
+                  <div class="scan3d-step" id="step-right"><span class="step-dot"></span><span>Right</span></div>
+                  <div class="scan3d-step" id="step-up"><span class="step-dot"></span><span>Up</span></div>
+                  <div class="scan3d-step" id="step-down"><span class="step-dot"></span><span>Down</span></div>
+                </div>
+              </div>
+            </div>
+            <div class="capture-actions">
+              <button class="btn btn-outline btn-sm" id="btn-open-scan">Start Scanner</button>
+              <button class="btn btn-outline btn-sm" id="btn-close-scan" style="display:none">Stop Scanner</button>
+            </div>
+            <div class="capture-note" id="scan-instruction">Enter employee name and start scanner to begin guided calibration.</div>
+          </div>
+
+          <div>
+            <div class="card-title" style="margin-bottom:8px">Photos</div>
+            <div class="photo-strip" id="photo-strip"></div>
+          </div>
+
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-fill" id="btn-register" disabled>Register Employee</button>
+            <button class="btn btn-outline" id="btn-clear-reg">Clear</button>
+          </div>
+        </div>
+
+        <div class="card" style="display:flex">
+          <div class="reg-preview">
+            <div class="reg-avatar" id="reg-avatar">
+              <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 0 1 12 0v1"/></svg>
+            </div>
+            <div class="reg-preview-name" id="reg-pname">—</div>
+            <div class="reg-preview-count" id="reg-pcount">0 photos</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="emp-section-head">
+      <span class="card-title" style="margin:0">Registered Employees</span>
+      <span class="photo-count" id="emp-total">0 total</span>
+    </div>
+    <div class="emp-grid" id="emp-grid"></div>
+    <div class="emp-empty" id="emp-empty" style="display:none">
+      <span>👤</span>
+      No employees registered yet
+    </div>
+  </section>
+
+  <!-- ═══ CAMERA ═══ -->
+  <section class="panel" id="p-camera">
+    <div class="cam-wrap">
+      <div class="cam-box" id="cam-box">
+        <video id="cam-video" autoplay muted playsinline></video>
+        <canvas id="cam-overlay"></canvas>
+        <div class="cam-error" id="cam-error">
+          <svg viewBox="0 0 24 24"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+          <p id="cam-error-msg">Camera access denied. Allow permissions and retry.</p>
+          <button class="btn btn-outline btn-sm" id="btn-retry-cam">Retry</button>
+        </div>
+      </div>
+      <div class="cam-bar">
+        <button class="btn btn-fill" id="btn-start-cam">Start Camera</button>
+        <button class="btn btn-outline" id="btn-stop-cam" style="display:none">Stop</button>
+      </div>
+      <div class="cam-status" id="cam-stat"><span class="dot"></span>Camera off</div>
+    </div>
+  </section>
+
+  <!-- ═══ LOGS ═══ -->
+  <section class="panel" id="p-logs">
+    <div class="card">
+      <div class="card-title">Attendance Records</div>
+      <div class="log-bar">
+        <div class="field">
+          <label for="log-date">Date</label>
+          <input type="date" id="log-date">
+        </div>
+        <div class="spacer"></div>
+        <button class="btn btn-outline btn-sm" id="btn-csv">Export CSV</button>
+        <button class="btn btn-danger btn-sm" id="btn-clear-log">Clear Today</button>
+      </div>
+      <div class="tbl-wrap">
+        <table class="tbl">
+          <thead><tr><th>Name</th><th>Date</th><th>Time</th></tr></thead>
+          <tbody id="log-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+</div>
+
+<!-- Supabase Settings Modal -->
+<div id="db-settings-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9000;align-items:center;justify-content:center">
+  <div class="card" style="width:100%;max-width:420px;padding:24px;position:relative">
+    <button id="btn-close-db-settings" style="position:absolute;top:16px;right:16px;background:none;border:none;font-size:18px;cursor:pointer;color:var(--text-3)">&times;</button>
+    <div class="card-title" style="margin-bottom:16px">Supabase Configuration</div>
+    <p style="font-size:.78rem;color:var(--text-3);line-height:1.5;margin-bottom:16px">
+      Connect a cloud database to synchronize employees and attendance across devices. Keep fields blank to run in Local Mode.
+    </p>
+    <div style="display:flex;flex-direction:column;gap:12px;margin-bottom:20px">
+      <div class="field">
+        <label for="db-url">Supabase API URL</label>
+        <input type="text" id="db-url" placeholder="https://xxxxxxxxxxxxxx.supabase.co" autocomplete="off">
+      </div>
+      <div class="field">
+        <label for="db-key">Supabase Anon API Key</label>
+        <input type="text" id="db-key" placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." autocomplete="off">
+      </div>
+    </div>
+    <div style="display:flex;justify-content:flex-end;gap:8px">
+      <button class="btn btn-outline" id="btn-cancel-db">Cancel</button>
+      <button class="btn btn-fill" id="btn-save-db">Save & Connect</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+'use strict';
+
+const MODEL_URL='https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@0.22.2/weights/';
+const LS_EMP='face_employees';
+const LS_ATT='face_attendance';
+const THRESHOLD=0.45;
+const DET_MS=300;
+
+let modelsOk=false,camStream=null,detecting=false,lastDet=0,rafId=null;
+let regPhotos=[];       // [{dataUrl, descriptor:Float32Array}]
+let capStream=null;     // for registration capture
+let scanPhotos = [];    // [{dataUrl, descriptor}]
+let scanStream = null;  // for 3D scan capture
+let scanState = 'idle'; // 'idle', 'calibrating', 'scanning', 'completed'
+let currentPoseIdx = 0; // index in POSES
+let poseHoldTime = 0;   // timestamp when current pose match started
+let baseYaw = null;
+let basePitch = null;
+let calibFrames = [];
+let scanRafId = null;
+
+const POSES = [
+  { key: 'front', label: 'Front (Straight)', instruction: 'Look straight at the camera' },
+  { key: 'left', label: 'Turn Left', instruction: 'Slowly turn your head left' },
+  { key: 'right', label: 'Turn Right', instruction: 'Slowly turn your head right' },
+  { key: 'up', label: 'Tilt Up', instruction: 'Slowly tilt your head up' },
+  { key: 'down', label: 'Tilt Down', instruction: 'Slowly tilt your head down' }
+];
+
+/* ── helpers ── */
+const $=id=>document.getElementById(id);
+function dayStr(d){d=d||new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')}
+function timeStr(){const d=new Date();return[d.getHours(),d.getMinutes(),d.getSeconds()].map(v=>String(v).padStart(2,'0')).join(':')}
+function esc(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML}
+function toast(msg){const c=$('toasts'),el=document.createElement('div');el.className='toast';el.textContent=msg;c.appendChild(el);setTimeout(()=>el.classList.add('out'),2700);setTimeout(()=>el.remove(),3000)}
+
+/* ── storage ── */
+let supabaseUrl = localStorage.getItem('supabase_url');
+let supabaseKey = localStorage.getItem('supabase_key');
+
+if (supabaseUrl === null) supabaseUrl = 'https://htqdpiwufoqbwrtauueu.supabase.co';
+if (supabaseKey === null) supabaseKey = 'sb_publishable_M9LFYaFgC1iFWR-1VCNCSQ_DnuN3Wm_';
+
+let supabase = null;
+let cachedEmployees = [];
+
+function initSupabase() {
+  supabaseUrl = localStorage.getItem('supabase_url');
+  supabaseKey = localStorage.getItem('supabase_key');
+  
+  if (supabaseUrl === null) supabaseUrl = 'https://htqdpiwufoqbwrtauueu.supabase.co';
+  if (supabaseKey === null) supabaseKey = 'sb_publishable_M9LFYaFgC1iFWR-1VCNCSQ_DnuN3Wm_';
+  
+  const badge = $('db-status-badge');
+  if (supabaseUrl && supabaseKey) {
+    try {
+      supabase = window.supabase.createClient(supabaseUrl, supabaseKey);
+      badge.innerHTML = '<span style="width:5px;height:5px;border-radius:50%;background:var(--green)"></span>Cloud (Supabase)';
+      badge.style.background = 'var(--green-soft)';
+      badge.style.color = 'var(--green)';
+    } catch (e) {
+      console.error('Supabase init error:', e);
+      supabase = null;
+      badge.innerHTML = '<span style="width:5px;height:5px;border-radius:50%;background:var(--red)"></span>Connection Error';
+      badge.style.background = 'var(--red-soft)';
+      badge.style.color = 'var(--red)';
+    }
+  } else {
+    supabase = null;
+    badge.innerHTML = '<span style="width:5px;height:5px;border-radius:50%;background:var(--text-4)"></span>Local Mode';
+    badge.style.background = 'var(--border)';
+    badge.style.color = 'var(--text-3)';
+  }
+}
+
+async function loadEmployees() {
+  if (supabase) {
+    try {
+      const { data, error } = await supabase.from('employees').select('name, photo_data_url, descriptors');
+      if (error) throw error;
+      cachedEmployees = (data || []).map(d => ({
+        name: d.name,
+        photoDataUrl: d.photo_data_url,
+        descriptors: d.descriptors
+      }));
+    } catch (err) {
+      console.error('Failed to load employees from Supabase:', err);
+      toast('Failed to load employees from Cloud. Using local fallback.');
+      cachedEmployees = getEmp();
+    }
+  } else {
+    cachedEmployees = getEmp();
+  }
+}
+
+function getEmp(){try{return JSON.parse(localStorage.getItem(LS_EMP))||[]}catch{return[]}}
+function setEmp(a){localStorage.setItem(LS_EMP,JSON.stringify(a))}
+function getAtt(){try{return JSON.parse(localStorage.getItem(LS_ATT))||[]}catch{return[]}}
+function setAtt(a){localStorage.setItem(LS_ATT,JSON.stringify(a))}
+function toLabeled(){
+  return cachedEmployees.map(e => {
+    const descList = e.descriptors 
+      ? e.descriptors.map(d => new Float32Array(d)) 
+      : (e.descriptorArray ? [new Float32Array(e.descriptorArray)] : []);
+    return new faceapi.LabeledFaceDescriptors(e.name, descList);
+  });
+}
+
+/* ── date display ── */
+$('header-date').textContent=new Date().toLocaleDateString('en-US',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
+
+/* ── tabs ── */
+document.querySelectorAll('.tab').forEach(t=>{
+  t.addEventListener('click',async()=>{
+    if(t.disabled)return;
+    document.querySelectorAll('.tab').forEach(b=>b.classList.remove('on'));
+    t.classList.add('on');
+    document.querySelectorAll('.panel').forEach(p=>p.classList.remove('on'));
+    $('p-'+t.dataset.t).classList.add('on');
+    if(t.dataset.t==='logs')await renderLog();
+    if(t.dataset.t==='employees')await renderEmp();
+    if(t.dataset.t!=='camera'&&camStream)stopCam();
+    if(t.dataset.t!=='employees')closeScanCam();
+  });
+});
+
+/* ── model loading ── */
+async function loadModels(){
+  try{
+    $('ld-status').textContent='Loading face detector…';
+    await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
+    $('ld-status').textContent='Loading landmarks…';
+    await faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL);
+    $('ld-status').textContent='Loading recognition…';
+    await faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL);
+    modelsOk=true;
+    $('t-cam').disabled=false;
+    $('ld-status').textContent='Ready';
+    setTimeout(()=>$('loading-overlay').classList.add('done'),250);
+  }catch(err){
+    console.error(err);
+    document.querySelector('.ld-spinner').style.display='none';
+    $('ld-status').style.display='none';
+    $('ld-error').style.display='block';
+  }
+}
+
+/* ══════════════════════════════════════
+   REGISTRATION
+   ══════════════════════════════════════ */
+
+const rName=$('r-name');
+const rFiles=$('r-files');
+const strip=$('photo-strip');
+
+/* method toggle */
+document.querySelectorAll('.method-btn').forEach(b=>{
+  b.addEventListener('click',()=>{
+    document.querySelectorAll('.method-btn').forEach(x=>x.classList.remove('on'));
+    b.classList.add('on');
+    $('upload-zone').style.display=b.dataset.m==='upload'?'':'none';
+    
+    const capZone=$('capture-zone');
+    if(b.dataset.m==='capture'){capZone.classList.add('on')}else{capZone.classList.remove('on');closeCapCam()}
+    
+    const scanZone=$('scan3d-zone');
+    if(b.dataset.m==='scan3d'){scanZone.style.display=''}else{scanZone.style.display='none';closeScanCam()}
+    updPreview();
+  });
+});
+
+/* preview update */
+function updPreview(){
+  const name=rName.value.trim();
+  $('reg-pname').textContent=name||'—';
+  
+  const activeMethod = document.querySelector('.method-btn.on').dataset.m;
+  if (activeMethod === 'scan3d') {
+    $('reg-pcount').textContent=scanPhotos.length+' photo'+(scanPhotos.length!==1?'s':'') + ' (3D Scan)';
+    const av=$('reg-avatar');
+    if(scanPhotos.length>0){av.innerHTML='<img src="'+scanPhotos[0].dataUrl+'" alt="preview">';}
+    else{av.innerHTML='<svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 0 1 12 0v1"/></svg>';}
+    $('btn-register').disabled=!(name&&scanPhotos.length>=5&&modelsOk);
+  } else {
+    $('reg-pcount').textContent=regPhotos.length+' photo'+(regPhotos.length!==1?'s':'');
+    const av=$('reg-avatar');
+    if(regPhotos.length>0){av.innerHTML='<img src="'+regPhotos[regPhotos.length-1].dataUrl+'" alt="preview">';}
+    else{av.innerHTML='<svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 0 1 12 0v1"/></svg>';}
+    $('btn-register').disabled=!(name&&regPhotos.length>=1&&modelsOk);
+  }
+}
+rName.addEventListener('input',updPreview);
+
+/* strip render */
+function renderStrip(){
+  strip.innerHTML='';
+  regPhotos.forEach((p,i)=>{
+    const d=document.createElement('div');d.className='photo-thumb';
+    d.innerHTML='<img src="'+p.dataUrl+'"><button class="pt-remove" data-i="'+i+'">×</button>';
+    strip.appendChild(d);
+  });
+  strip.querySelectorAll('.pt-remove').forEach(b=>{
+    b.addEventListener('click',()=>{regPhotos.splice(parseInt(b.dataset.i),1);renderStrip();updPreview()});
+  });
+  updPreview();
+}
+
+/* file upload */
+rFiles.addEventListener('change',async()=>{
+  const files=Array.from(rFiles.files);
+  if(!files.length)return;
+  if(regPhotos.length+files.length>5){alert('Maximum 5 photos total.');rFiles.value='';return;}
+  $('proc').classList.add('on');
+  for(let i=0;i<files.length;i++){
+    $('proc-text').textContent='Processing photo '+(i+1)+'/'+files.length+'…';
+    try{
+      const img=await loadImg(files[i]);
+      const det=await faceapi.detectSingleFace(img,new faceapi.TinyFaceDetectorOptions()).withFaceLandmarks().withFaceDescriptor();
+      if(!det){alert('No face found in photo '+(i+1)+'. Skipped.');continue;}
+      regPhotos.push({dataUrl:thumbUrl(img,160),descriptor:det.descriptor});
+    }catch(e){console.error(e);alert('Error in photo '+(i+1)+': '+e.message);}
+  }
+  $('proc').classList.remove('on');
+  rFiles.value='';
+  renderStrip();
+});
+
+function loadImg(file){return new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>{const im=new Image();im.onload=()=>res(im);im.onerror=rej;im.src=r.result};r.onerror=rej;r.readAsDataURL(file)})}
+function thumbUrl(img,sz){const c=document.createElement('canvas');let w=img.naturalWidth||img.width,h=img.naturalHeight||img.height;if(w>h){h=Math.round(h*sz/w);w=sz}else{w=Math.round(w*sz/h);h=sz}c.width=w;c.height=h;c.getContext('2d').drawImage(img,0,0,w,h);return c.toDataURL('image/jpeg',.82)}
+
+/* capture camera */
+const capVid=$('cap-video');
+const capCvs=$('cap-canvas');
+
+$('btn-open-cap').addEventListener('click',async()=>{
+  try{
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      throw new Error('Akses kamera diblokir oleh browser. Pastikan menggunakan protokol aman (HTTPS) atau localhost!');
+    }
+    capStream=await navigator.mediaDevices.getUserMedia({video:{width:{ideal:480},facingMode:'user'}});
+    capVid.srcObject=capStream;
+    await new Promise((resolve) => {
+      capVid.onloadedmetadata = () => resolve();
+      if (capVid.readyState >= 2) resolve();
+    });
+    await capVid.play();
+    $('btn-open-cap').style.display='none';
+    $('btn-snap').style.display='';
+    $('btn-close-cap').style.display='';
+  }catch(e){alert('Camera error: '+e.message)}
+});
+
+$('btn-snap').addEventListener('click',async()=>{
+  if(regPhotos.length>=5){alert('Max 5 photos.');return;}
+  capCvs.width=capVid.videoWidth;capCvs.height=capVid.videoHeight;
+  const ctx=capCvs.getContext('2d');
+  ctx.save();ctx.translate(capCvs.width,0);ctx.scale(-1,1);
+  ctx.drawImage(capVid,0,0);ctx.restore();
+
+  $('proc').classList.add('on');$('proc-text').textContent='Detecting face…';
+  try{
+    const det=await faceapi.detectSingleFace(capCvs,new faceapi.TinyFaceDetectorOptions()).withFaceLandmarks().withFaceDescriptor();
+    if(!det){$('proc').classList.remove('on');alert('No face detected. Try again.');return;}
+    regPhotos.push({dataUrl:capCvs.toDataURL('image/jpeg',.82),descriptor:det.descriptor});
+    renderStrip();
+    toast('Photo captured ('+regPhotos.length+'/5)');
+  }catch(e){alert('Detection error: '+e.message)}
+  $('proc').classList.remove('on');
+});
+
+$('btn-close-cap').addEventListener('click',closeCapCam);
+function closeCapCam(){
+  if(capStream){capStream.getTracks().forEach(t=>t.stop());capStream=null;}
+  capVid.srcObject=null;
+  $('btn-open-cap').style.display='';
+  $('btn-snap').style.display='none';
+  $('btn-close-cap').style.display='none';
+}
+
+/* register */
+$('btn-register').addEventListener('click',async()=>{
+  const name=rName.value.trim();
+  const activeMethod = document.querySelector('.method-btn.on').dataset.m;
+  
+  if (activeMethod === 'scan3d') {
+    if(!name||scanPhotos.length<5)return;
+    $('proc').classList.add('on');
+    $('proc-text').textContent='Registering in cloud...';
+    try {
+      const descriptorsArr = scanPhotos.map(p => Array.from(p.descriptor));
+      const photoDataUrl = scanPhotos[0].dataUrl;
+      
+      if (supabase) {
+        const { error } = await supabase.from('employees').upsert({
+          name,
+          photo_data_url: photoDataUrl,
+          descriptors: descriptorsArr
+        }, { onConflict: 'name' });
+        if (error) throw error;
+      }
+      
+      const emps=getEmp();
+      const idx=emps.findIndex(e=>e.name.toLowerCase()===name.toLowerCase());
+      if(idx!==-1)emps.splice(idx,1);
+      emps.push({
+        name,
+        photoDataUrl,
+        descriptorArray: descriptorsArr[0],
+        descriptors: descriptorsArr
+      });
+      setEmp(emps);
+      
+      rName.value='';scanPhotos=[];closeScanCam();
+      await loadEmployees();
+      renderEmp();updPreview();
+      toast('✓ '+name+' registered with 3D Scan');
+    } catch(e) {
+      console.error(e);
+      alert('Registration error: '+e.message);
+    }
+    $('proc').classList.remove('on');
+  } else {
+    if(!name||regPhotos.length<1)return;
+    $('proc').classList.add('on');
+    $('proc-text').textContent='Registering in cloud...';
+    try {
+      const avg=new Float32Array(128);
+      for(let i=0;i<128;i++){let s=0;for(const p of regPhotos)s+=p.descriptor[i];avg[i]=s/regPhotos.length;}
+      const descriptorsArr = regPhotos.map(p => Array.from(p.descriptor));
+      const photoDataUrl = regPhotos[0].dataUrl;
+
+      if (supabase) {
+        const { error } = await supabase.from('employees').upsert({
+          name,
+          photo_data_url: photoDataUrl,
+          descriptors: descriptorsArr
+        }, { onConflict: 'name' });
+        if (error) throw error;
+      }
+
+      const emps=getEmp();
+      const idx=emps.findIndex(e=>e.name.toLowerCase()===name.toLowerCase());
+      if(idx!==-1)emps.splice(idx,1);
+      emps.push({
+        name,
+        descriptorArray:Array.from(avg),
+        descriptors: descriptorsArr,
+        photoDataUrl
+      });
+      setEmp(emps);
+
+      rName.value='';regPhotos=[];renderStrip();closeCapCam();
+      await loadEmployees();
+      renderEmp();updPreview();
+      toast('✓ '+name+' registered');
+    } catch(e) {
+      console.error(e);
+      alert('Registration error: '+e.message);
+    }
+    $('proc').classList.remove('on');
+  }
+});
+
+$('btn-clear-reg').addEventListener('click',()=>{rName.value='';regPhotos=[];scanPhotos=[];renderStrip();closeCapCam();closeScanCam();updPreview()});
+
+/* ── sound effects ── */
+const Sound = {
+  ctx: null,
+  init() {
+    if (!this.ctx) {
+      this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+  },
+  playTone(freq, type, dur, vol = 0.1) {
+    this.init();
+    if (!this.ctx) return;
+    try {
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.type = type;
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(vol, this.ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.0001, this.ctx.currentTime + dur);
+      osc.connect(gain);
+      gain.connect(this.ctx.destination);
+      osc.start();
+      osc.stop(this.ctx.currentTime + dur);
+    } catch (e) {
+      console.warn('Web Audio error:', e);
+    }
+  },
+  beep() {
+    this.playTone(880, 'sine', 0.08, 0.08);
+  },
+  click() {
+    this.playTone(1200, 'square', 0.03, 0.03);
+  },
+  successAngle() {
+    this.playTone(523.25, 'triangle', 0.15, 0.1);
+    setTimeout(() => this.playTone(659.25, 'triangle', 0.25, 0.1), 120);
+  },
+  complete() {
+    const melody = [523.25, 659.25, 783.99, 1046.5];
+    melody.forEach((f, i) => {
+      setTimeout(() => this.playTone(f, 'sine', 0.3, 0.12), i * 150);
+    });
+  },
+  error() {
+    this.playTone(220, 'sawtooth', 0.3, 0.15);
+  }
+};
+
+/* ══════════════════════════════════════
+   3D GUIDED SCAN LOGIC
+   ══════════════════════════════════════ */
+
+const scanVid = $('scan-video');
+const scanCvs = $('scan-overlay');
+const holoCvs = $('scan-hologram');
+
+$('btn-open-scan').addEventListener('click', startScanCam);
+$('btn-close-scan').addEventListener('click', closeScanCam);
+
+async function startScanCam() {
+  if (!rName.value.trim()) {
+    alert('Please enter employee name first.');
+    rName.focus();
+    return;
+  }
+  Sound.init();
+  scanPhotos = [];
+  calibFrames = [];
+  baseYaw = null;
+  basePitch = null;
+  currentPoseIdx = 0;
+  scanState = 'calibrating';
+  updStepsUI();
+  
+  $('scan-instruction').textContent = 'Initialising camera...';
+  
+  try {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      throw new Error('Akses kamera diblokir oleh browser. Pastikan menggunakan protokol aman (HTTPS) atau localhost!');
+    }
+    scanStream = await navigator.mediaDevices.getUserMedia({
+      video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' }
+    });
+    scanVid.srcObject = scanStream;
+    await new Promise((resolve) => {
+      scanVid.onloadedmetadata = () => resolve();
+      if (scanVid.readyState >= 2) resolve();
+    });
+    await scanVid.play();
+    
+    if (!scanVid.videoWidth) {
+      await new Promise(r => setTimeout(r, 200));
+    }
+    
+    scanCvs.width = scanVid.videoWidth || 640;
+    scanCvs.height = scanVid.videoHeight || 480;
+    
+    $('btn-open-scan').style.display = 'none';
+    $('btn-close-scan').style.display = '';
+    $('scan3d-preview').classList.add('scanning');
+    
+    scanLoop();
+    Sound.playTone(600, 'sine', 0.2, 0.1);
+  } catch (e) {
+    console.error(e);
+    alert('Camera error: ' + e.message);
+    closeScanCam();
+  }
+}
+
+function closeScanCam() {
+  scanState = 'idle';
+  if (scanRafId) {
+    cancelAnimationFrame(scanRafId);
+    scanRafId = null;
+  }
+  if (scanStream) {
+    scanStream.getTracks().forEach(t => t.stop());
+    scanStream = null;
+  }
+  scanVid.srcObject = null;
+  
+  try {
+    const ctx = scanCvs.getContext('2d');
+    ctx.clearRect(0, 0, scanCvs.width, scanCvs.height);
+    
+    const hctx = holoCvs.getContext('2d');
+    hctx.clearRect(0, 0, holoCvs.width, holoCvs.height);
+  } catch (err) {}
+  
+  $('btn-open-scan').style.display = '';
+  $('btn-close-scan').style.display = 'none';
+  $('scan3d-preview').classList.remove('scanning');
+  $('scan-instruction').textContent = 'Scanner off. Enter name and press Start to begin.';
+  updStepsUI();
+}
+
+function updStepsUI() {
+  POSES.forEach(p => {
+    const el = $('step-' + p.key);
+    if (!el) return;
+    el.className = 'scan3d-step';
+    
+    if (scanState === 'scanning' && POSES[currentPoseIdx].key === p.key) {
+      el.classList.add('active');
+    } else if (scanState === 'scanning' && POSES.findIndex(x => x.key === p.key) < currentPoseIdx) {
+      el.classList.add('done');
+    } else if (scanState === 'completed') {
+      el.classList.add('done');
+    }
+  });
+}
+
+function scanLoop() {
+  if (scanState === 'idle') return;
+  scanRafId = requestAnimationFrame(async () => {
+    await processScanFrame();
+    scanLoop();
+  });
+}
+
+// Global landmark 3D offsets for rotating wireframe visualization
+const landmarkZOffsets = new Float32Array(68);
+for(let i=0; i<68; i++) {
+  if (i >= 0 && i <= 16) {
+    landmarkZOffsets[i] = -30 * Math.pow(Math.abs(i - 8) / 8, 1.5);
+  } else if (i >= 27 && i <= 30) {
+    landmarkZOffsets[i] = 10 + (i - 27) * 8;
+  } else if (i >= 31 && i <= 35) {
+    landmarkZOffsets[i] = 28 - Math.abs(i - 33) * 5;
+  } else if (i >= 17 && i <= 26) {
+    landmarkZOffsets[i] = -5;
+  } else if (i >= 36 && i <= 47) {
+    landmarkZOffsets[i] = -8;
+  } else if (i >= 48 && i <= 67) {
+    landmarkZOffsets[i] = 5;
+  }
+}
+
+async function processScanFrame() {
+  if (!scanVid.videoWidth) return;
+  const ctx = scanCvs.getContext('2d');
+  ctx.clearRect(0, 0, scanCvs.width, scanCvs.height);
+  
+  const det = await faceapi.detectSingleFace(scanVid, new faceapi.TinyFaceDetectorOptions())
+    .withFaceLandmarks()
+    .withFaceDescriptor();
+    
+  drawJoystickGrid(ctx);
+  
+  if (!det) {
+    $('scan-instruction').textContent = 'Adjust position: No face detected';
+    ctx.strokeStyle = 'rgba(248, 113, 113, 0.4)';
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(scanCvs.width/4, scanCvs.height/6, scanCvs.width/2, 2*scanCvs.height/3);
+    poseHoldTime = 0;
+    return;
+  }
+  
+  const pts = det.landmarks.positions;
+  const box = det.detection.box;
+  
+  const isTargetPoseMatched = scanState === 'scanning' && checkPose(det.landmarks);
+  ctx.strokeStyle = isTargetPoseMatched ? '#16a34a' : 'rgba(37,99,235,.7)';
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(box.x, box.y, box.width, box.height);
+  
+  const len = 18;
+  ctx.beginPath();
+  ctx.strokeStyle = isTargetPoseMatched ? '#16a34a' : 'rgba(37,99,235,.8)';
+  ctx.lineWidth = 3;
+  ctx.moveTo(box.x, box.y + len); ctx.lineTo(box.x, box.y); ctx.lineTo(box.x + len, box.y);
+  ctx.moveTo(box.x + box.width - len, box.y); ctx.lineTo(box.x + box.width, box.y); ctx.lineTo(box.x + box.width, box.y + len);
+  ctx.moveTo(box.x, box.y + box.height - len); ctx.lineTo(box.x, box.y + box.height); ctx.lineTo(box.x + len, box.y + box.height);
+  ctx.moveTo(box.x + box.width - len, box.y + box.height); ctx.lineTo(box.x + box.width, box.y + box.height); ctx.lineTo(box.x + box.width, box.y + box.height - len);
+  ctx.stroke();
+  
+  const pose = estimatePose(det.landmarks);
+  renderHologram(pts, box);
+  
+  if (scanState === 'calibrating') {
+    $('scan-instruction').textContent = 'Hold still and look straight to calibrate (' + calibFrames.length + '/5)';
+    calibFrames.push({ yaw: pose.yawRatio, pitch: pose.pitchRatio });
+    
+    ctx.fillStyle = 'rgba(37, 99, 235, 0.6)';
+    ctx.font = '500 12px ui-monospace,monospace';
+    ctx.fillText('CALIBRATING', box.x + 10, box.y - 10);
+    
+    if (calibFrames.length >= 5) {
+      let sumYaw = 0, sumPitch = 0;
+      calibFrames.forEach(f => { sumYaw += f.yaw; sumPitch += f.pitch; });
+      baseYaw = sumYaw / 5;
+      basePitch = sumPitch / 5;
+      scanState = 'scanning';
+      currentPoseIdx = 0;
+      updStepsUI();
+      Sound.successAngle();
+    }
+    return;
+  }
+  
+  if (scanState === 'scanning') {
+    const targetPose = POSES[currentPoseIdx];
+    $('scan-instruction').textContent = targetPose.label + ' — ' + targetPose.instruction;
+    
+    const rx = (pose.yawRatio - baseYaw) / baseYaw;
+    const ry = (pose.pitchRatio - basePitch) / basePitch;
+    drawJoystickDot(ctx, rx, ry, isTargetPoseMatched);
+    
+    if (isTargetPoseMatched) {
+      if (!poseHoldTime) {
+        poseHoldTime = performance.now();
+        Sound.beep();
+      }
+      
+      const elapsed = performance.now() - poseHoldTime;
+      const progress = Math.min(elapsed / 800, 1.0);
+      
+      const cx = box.x + box.width/2;
+      const cy = box.y + box.height/2;
+      const r = Math.max(box.width, box.height)/2 + 14;
+      
+      ctx.beginPath();
+      ctx.strokeStyle = 'rgba(22, 163, 74, 0.15)';
+      ctx.lineWidth = 3;
+      ctx.arc(cx, cy, r, 0, 2*Math.PI);
+      ctx.stroke();
+      
+      ctx.beginPath();
+      ctx.strokeStyle = '#16a34a';
+      ctx.lineWidth = 4;
+      ctx.arc(cx, cy, r, -Math.PI/2, -Math.PI/2 + (2*Math.PI * progress));
+      ctx.stroke();
+      
+      ctx.fillStyle = '#16a34a';
+      ctx.font = '500 11px ui-monospace,monospace';
+      ctx.fillText(Math.round(progress*100) + '%', box.x + 10, box.y - 10);
+      
+      if (progress >= 1.0) {
+        const capCanvas = document.createElement('canvas');
+        capCanvas.width = scanVid.videoWidth;
+        capCanvas.height = scanVid.videoHeight;
+        const cctx = capCanvas.getContext('2d');
+        cctx.save();
+        cctx.translate(capCanvas.width, 0);
+        cctx.scale(-1, 1);
+        cctx.drawImage(scanVid, 0, 0);
+        cctx.restore();
+        
+        scanPhotos.push({
+          angle: targetPose.key,
+          dataUrl: thumbUrl(capCanvas, 160),
+          descriptor: det.descriptor
+        });
+        
+        Sound.successAngle();
+        currentPoseIdx++;
+        poseHoldTime = 0;
+        
+        if (currentPoseIdx >= POSES.length) {
+          scanState = 'completed';
+          Sound.complete();
+          $('scan3d-preview').classList.remove('scanning');
+          $('scan-instruction').textContent = 'Scan complete. Click "Register Employee" to save.';
+          updStepsUI();
+          updPreview();
+        } else {
+          updStepsUI();
+        }
+      }
+    } else {
+      poseHoldTime = 0;
+      ctx.fillStyle = 'rgba(37, 99, 235, 0.7)';
+      ctx.font = '500 11px ui-monospace,monospace';
+      ctx.fillText(targetPose.label.toUpperCase(), box.x + 10, box.y - 10);
+    }
+  }
+  
+  if (scanState === 'completed') {
+    ctx.fillStyle = 'rgba(22, 163, 74, 0.7)';
+    ctx.font = '600 13px "DM Sans",sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('✓ Scan Complete', scanCvs.width/2, scanCvs.height/2);
+    ctx.textAlign = 'left';
+  }
+}
+
+function checkPose(landmarks) {
+  const pose = estimatePose(landmarks);
+  const target = POSES[currentPoseIdx].key;
+  
+  if (target === 'front') {
+    return Math.abs(pose.yawRatio - baseYaw) < 0.15 && Math.abs(pose.pitchRatio - basePitch) < 0.1;
+  }
+  if (target === 'left') {
+    return pose.yawRatio < baseYaw * 0.65;
+  }
+  if (target === 'right') {
+    return pose.yawRatio > baseYaw * 1.5;
+  }
+  if (target === 'up') {
+    return pose.pitchRatio < basePitch * 0.65;
+  }
+  if (target === 'down') {
+    return pose.pitchRatio > basePitch * 1.4;
+  }
+  return false;
+}
+
+function estimatePose(landmarks) {
+  const pts = landmarks.positions;
+  
+  const leftJaw = pts[0];
+  const rightJaw = pts[16];
+  const noseTip = pts[30];
+  
+  const dLeft = noseTip.x - leftJaw.x;
+  const dRight = rightJaw.x - noseTip.x;
+  const yawRatio = dLeft / dRight;
+  
+  const chin = pts[8];
+  const eyeCenterY = (pts[36].y + pts[45].y) / 2;
+  const dNoseToEyes = noseTip.y - eyeCenterY;
+  const dNoseToChin = chin.y - noseTip.y;
+  const pitchRatio = dNoseToEyes / dNoseToChin;
+  
+  return { yawRatio, pitchRatio };
+}
+
+function drawJoystickGrid(ctx) {
+  const jx = scanCvs.width - 56;
+  const jy = 56;
+  const jr = 28;
+  
+  ctx.save();
+  ctx.strokeStyle = 'rgba(37, 99, 235, 0.15)';
+  ctx.lineWidth = 1;
+  
+  ctx.beginPath();
+  ctx.moveTo(jx - jr, jy); ctx.lineTo(jx + jr, jy);
+  ctx.moveTo(jx, jy - jr); ctx.lineTo(jx, jy + jr);
+  ctx.stroke();
+  
+  ctx.beginPath();
+  ctx.arc(jx, jy, jr, 0, 2*Math.PI);
+  ctx.arc(jx, jy, jr/2, 0, 2*Math.PI);
+  ctx.stroke();
+  
+  ctx.fillStyle = 'rgba(37, 99, 235, 0.4)';
+  ctx.font = '500 7px ui-monospace,monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText('HEAD POSE', jx, jy + jr + 10);
+  ctx.restore();
+}
+
+function drawJoystickDot(ctx, rx, ry, matched) {
+  const jx = scanCvs.width - 56;
+  const jy = 56;
+  const jr = 28;
+  
+  const dx = Math.max(-1, Math.min(1, rx * 1.5)) * jr;
+  const dy = Math.max(-1, Math.min(1, ry * 1.5)) * jr;
+  
+  ctx.save();
+  ctx.beginPath();
+  ctx.strokeStyle = matched ? 'rgba(22, 163, 74, 0.25)' : 'rgba(37, 99, 235, 0.25)';
+  ctx.lineWidth = 1;
+  ctx.moveTo(jx, jy);
+  ctx.lineTo(jx - dx, jy + dy);
+  ctx.stroke();
+  
+  ctx.beginPath();
+  ctx.fillStyle = matched ? '#16a34a' : '#2563eb';
+  ctx.arc(jx - dx, jy + dy, 3.5, 0, 2*Math.PI);
+  ctx.shadowColor = matched ? '#16a34a' : '#2563eb';
+  ctx.shadowBlur = 5;
+  ctx.fill();
+  ctx.restore();
+}
+
+function renderHologram(pts, box) {
+  const hctx = holoCvs.getContext('2d');
+  hctx.clearRect(0, 0, holoCvs.width, holoCvs.height);
+  
+  hctx.strokeStyle = 'rgba(37, 99, 235, 0.08)';
+  hctx.lineWidth = 0.5;
+  for (let i = 10; i < 150; i += 25) {
+    hctx.beginPath();
+    hctx.arc(75, 75, i, 0, 2*Math.PI);
+    hctx.stroke();
+  }
+  
+  let sumX = 0, sumY = 0;
+  pts.forEach(p => { sumX += p.x; sumY += p.y; });
+  const cx = sumX / 68;
+  const cy = sumY / 68;
+  
+  const maxDim = Math.max(box.width, box.height);
+  const drawScale = 50 / (maxDim || 1);
+  
+  const angleY = performance.now() * 0.001;
+  const angleX = Math.sin(performance.now() * 0.0005) * 0.12;
+  
+  const projPts = pts.map((p, i) => {
+    const dx = p.x - cx;
+    const dy = p.y - cy;
+    const dz = landmarkZOffsets[i] * 1.5;
+    
+    const x1 = dx * Math.cos(angleY) - dz * Math.sin(angleY);
+    const z1 = dx * Math.sin(angleY) + dz * Math.cos(angleY);
+    const y2 = dy * Math.cos(angleX) - z1 * Math.sin(angleX);
+    
+    return {
+      x: 75 + x1 * drawScale,
+      y: 75 + y2 * drawScale
+    };
+  });
+  
+  hctx.strokeStyle = 'rgba(37, 99, 235, 0.3)';
+  hctx.lineWidth = 0.8;
+  
+  const path = (start, end, loop=false) => {
+    hctx.beginPath();
+    hctx.moveTo(projPts[start].x, projPts[start].y);
+    for(let i = start + 1; i <= end; i++) {
+      hctx.lineTo(projPts[i].x, projPts[i].y);
+    }
+    if(loop) hctx.closePath();
+    hctx.stroke();
+  };
+  
+  path(0, 16);
+  path(17, 21);
+  path(22, 26);
+  path(27, 30);
+  path(31, 35, true);
+  path(36, 41, true);
+  path(42, 47, true);
+  path(48, 59, true);
+  path(60, 67, true);
+  
+  hctx.fillStyle = '#2563eb';
+  projPts.forEach(p => {
+    hctx.beginPath();
+    hctx.arc(p.x, p.y, 1, 0, 2 * Math.PI);
+    hctx.fill();
+  });
+}
+
+function renderEmp(){
+  const emps=cachedEmployees;
+  const g=$('emp-grid');g.innerHTML='';
+  $('emp-total').textContent=emps.length+' total';
+  if(!emps.length){$('emp-empty').style.display='';return;}
+  $('emp-empty').style.display='none';
+  emps.forEach((e,i)=>{
+    const c=document.createElement('div');c.className='emp-card';
+    const ph=e.photoDataUrl||'data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 1 1%22><rect fill=%22%23f3f4f6%22 width=%221%22 height=%221%22/></svg>';
+    c.innerHTML='<img class="emp-card-photo" src="'+ph+'" alt="'+esc(e.name)+'">'
+      +'<div class="emp-card-body"><span class="emp-card-name" title="'+esc(e.name)+'">'+esc(e.name)+'</span>'
+      +'<button class="btn-icon danger" data-i="'+i+'" title="Remove">×</button></div>';
+    g.appendChild(c);
+  });
+  g.querySelectorAll('.btn-icon.danger').forEach(b=>{
+    b.addEventListener('click',async()=>{
+      const idx = parseInt(b.dataset.i);
+      const name = cachedEmployees[idx].name;
+      if(confirm('Remove '+name+'?')){
+        await removeEmployee(name);
+      }
+    });
+  });
+}
+
+async function removeEmployee(name) {
+  $('proc').classList.add('on');
+  $('proc-text').textContent = 'Removing employee...';
+  try {
+    if (supabase) {
+      const { error } = await supabase.from('employees').delete().eq('name', name);
+      if (error) throw error;
+    }
+    const emps = getEmp();
+    const idx = emps.findIndex(e => e.name.toLowerCase() === name.toLowerCase());
+    if (idx !== -1) {
+      emps.splice(idx, 1);
+      setEmp(emps);
+    }
+    await loadEmployees();
+    renderEmp();
+    toast('Removed ' + name);
+  } catch (err) {
+    console.error('Failed to remove employee:', err);
+    alert('Failed to remove employee: ' + err.message);
+  }
+  $('proc').classList.remove('on');
+}
+
+/* ══════════════════════════════════════
+   LIVE ATTENDANCE CAMERA
+   ══════════════════════════════════════ */
+const camV=$('cam-video'),camC=$('cam-overlay');
+
+$('btn-start-cam').addEventListener('click',startCam);
+$('btn-stop-cam').addEventListener('click',stopCam);
+$('btn-retry-cam').addEventListener('click',startCam);
+
+async function startCam(){
+  $('cam-error').style.display='none';
+  camV.style.display='';camC.style.display='';
+  try{
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      throw new Error('Akses kamera diblokir oleh browser. Pastikan menggunakan protokol aman (HTTPS) atau localhost!');
+    }
+    camStream=await navigator.mediaDevices.getUserMedia({video:{width:{ideal:720},height:{ideal:450},facingMode:'user'}});
+    camV.srcObject=camStream;
+    await new Promise((resolve) => {
+      camV.onloadedmetadata = () => resolve();
+      if (camV.readyState >= 2) resolve();
+    });
+    await camV.play();
+    
+    if (!camV.videoWidth) {
+      await new Promise(r => setTimeout(r, 200));
+    }
+    
+    camC.width=camV.videoWidth || 640;
+    camC.height=camV.videoHeight || 480;
+    $('btn-start-cam').style.display='none';$('btn-stop-cam').style.display='';
+    $('cam-stat').innerHTML='<span class="dot live"></span>Scanning…';
+    detecting=true;detLoop();
+  }catch(e){
+    camV.style.display='none';camC.style.display='none';
+    $('cam-error').style.display='flex';
+    $('cam-error-msg').textContent=e.name==='NotAllowedError'?'Camera access denied. Please allow permissions and retry.'
+      :e.name==='NotFoundError'?'No camera found. Connect a webcam and retry.'
+      :e.message;
+  }
+}
+function stopCam(){
+  detecting=false;if(rafId){cancelAnimationFrame(rafId);rafId=null;}
+  if(camStream){camStream.getTracks().forEach(t=>t.stop());camStream=null;}
+  camV.srcObject=null;
+  camC.getContext('2d').clearRect(0,0,camC.width,camC.height);
+  $('btn-start-cam').style.display='';$('btn-stop-cam').style.display='none';
+  $('cam-stat').innerHTML='<span class="dot"></span>Camera off';
+}
+function detLoop(){if(!detecting)return;rafId=requestAnimationFrame(async()=>{const now=performance.now();if(now-lastDet>=DET_MS){lastDet=now;await runDet();}detLoop();})}
+
+async function runDet(){
+  if(!camV.videoWidth)return;
+  const ctx=camC.getContext('2d');ctx.clearRect(0,0,camC.width,camC.height);
+  const dets=await faceapi.detectAllFaces(camV,new faceapi.TinyFaceDetectorOptions()).withFaceLandmarks().withFaceDescriptors();
+  if(!dets.length)return;
+  const labeled=toLabeled();
+  let matcher=labeled.length?new faceapi.FaceMatcher(labeled,THRESHOLD):null;
+  dets.forEach(d=>{
+    const b=d.detection.box;
+    let lbl='Unknown',ok=false;
+    if(matcher){const r=matcher.findBestMatch(d.descriptor);if(r.label!=='unknown'){lbl=r.label;ok=true;}}
+    ctx.strokeStyle=ok?'#2563eb':'rgba(255,255,255,.3)';ctx.lineWidth=1.5;ctx.strokeRect(b.x,b.y,b.width,b.height);
+    ctx.font='500 11px ui-monospace,monospace';
+    const tw=ctx.measureText(lbl).width,pw=tw+14,ph=22,px=b.x,py=b.y-ph-4;
+    ctx.fillStyle='rgba(0,0,0,.65)';roundRect(ctx,px,py,pw,ph,4);ctx.fill();
+    ctx.fillStyle=ok?'#93c5fd':'#d1d5db';ctx.fillText(lbl,px+7,py+15);
+    if(ok)logAtt(lbl);
+  });
+}
+function roundRect(c,x,y,w,h,r){c.beginPath();c.moveTo(x+r,y);c.lineTo(x+w-r,y);c.quadraticCurveTo(x+w,y,x+w,y+r);c.lineTo(x+w,y+h-r);c.quadraticCurveTo(x+w,y+h,x+w-r,y+h);c.lineTo(x+r,y+h);c.quadraticCurveTo(x,y+h,x,y+h-r);c.lineTo(x,y+r);c.quadraticCurveTo(x,y,x+r,y);c.closePath()}
+
+async function logAtt(name) {
+  const date = dayStr();
+  const time = timeStr();
+  
+  const localLogs = getAtt();
+  if (localLogs.some(l => l.name === name && l.date === date)) return;
+
+  localLogs.push({ name, date, time });
+  setAtt(localLogs);
+  
+  toast('✓ ' + name + ' checked in · ' + time);
+  
+  if (supabase) {
+    try {
+      const { error } = await supabase.from('attendance').insert({
+        name,
+        date,
+        time
+      });
+      if (error) throw error;
+      if ($('t-log').classList.contains('on')) {
+        await renderLog();
+      }
+    } catch (err) {
+      console.error('Failed to log attendance to Supabase:', err);
+    }
+  } else {
+    if ($('t-log').classList.contains('on')) {
+      renderLog();
+    }
+  }
+}
+
+/* ── logs ── */
+const logDate=$('log-date');logDate.value=dayStr();
+
+async function renderLog() {
+  const d = logDate.value || dayStr();
+  const tb = $('log-body');
+  
+  let logs = [];
+  if (supabase) {
+    try {
+      const { data, error } = await supabase.from('attendance')
+        .select('name, date, time')
+        .eq('date', d);
+      if (error) throw error;
+      logs = data || [];
+    } catch (err) {
+      console.error('Failed to fetch attendance logs from Supabase:', err);
+      logs = getAtt().filter(l => l.date === d);
+    }
+  } else {
+    logs = getAtt().filter(l => l.date === d);
+  }
+  
+  logs.sort((a, b) => a.time.localeCompare(b.time));
+  
+  tb.innerHTML = '';
+  if (!logs.length) {
+    tb.innerHTML = '<tr><td colspan="3" class="no-rows">No records for ' + d + '</td></tr>';
+    return;
+  }
+  logs.forEach(l => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = '<td>' + esc(l.name) + '</td><td>' + l.date + '</td><td>' + l.time + '</td>';
+    tb.appendChild(tr);
+  });
+}
+logDate.addEventListener('change', async () => await renderLog());
+
+$('btn-csv').addEventListener('click', async () => {
+  const d = logDate.value || '';
+  let fl = [];
+  
+  if (supabase) {
+    try {
+      let query = supabase.from('attendance').select('name, date, time');
+      if (d) {
+        query = query.eq('date', d);
+      }
+      const { data, error } = await query;
+      if (error) throw error;
+      fl = data || [];
+    } catch (err) {
+      console.error('Failed to fetch logs for CSV export:', err);
+      const all = getAtt();
+      fl = d ? all.filter(l => l.date === d) : all;
+    }
+  } else {
+    const all = getAtt();
+    fl = d ? all.filter(l => l.date === d) : all;
+  }
+  
+  if (!fl.length) {
+    toast('No records to export');
+    return;
+  }
+  
+  let csv = 'Name,Date,Time\n';
+  fl.forEach(l => csv += '"' + l.name + '",' + l.date + ',' + l.time + '\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+  a.download = 'attendance_' + (d || 'all') + '.csv';
+  a.click();
+  toast('CSV exported');
+});
+
+$('btn-clear-log').addEventListener('click', async () => {
+  const d = dayStr();
+  if (!confirm('Clear all records for ' + d + '?')) return;
+  
+  $('proc').classList.add('on');
+  $('proc-text').textContent = 'Clearing log...';
+  try {
+    if (supabase) {
+      const { error } = await supabase.from('attendance').delete().eq('date', d);
+      if (error) throw error;
+    }
+    
+    setAtt(getAtt().filter(l => l.date !== d));
+    await renderLog();
+    toast("Today's log cleared");
+  } catch (err) {
+    console.error('Failed to clear logs:', err);
+    alert('Failed to clear logs: ' + err.message);
+  }
+  $('proc').classList.remove('on');
+});
+
+// Database Settings Event Listeners
+$('btn-db-settings').addEventListener('click', () => {
+  let savedUrl = localStorage.getItem('supabase_url');
+  let savedKey = localStorage.getItem('supabase_key');
+  
+  if (savedUrl === null) savedUrl = 'https://htqdpiwufoqbwrtauueu.supabase.co';
+  if (savedKey === null) savedKey = 'sb_publishable_M9LFYaFgC1iFWR-1VCNCSQ_DnuN3Wm_';
+  
+  $('db-url').value = savedUrl;
+  $('db-key').value = savedKey;
+  $('db-settings-modal').style.display = 'flex';
+});
+
+const closeDbSettings = () => {
+  $('db-settings-modal').style.display = 'none';
+};
+
+$('btn-close-db-settings').addEventListener('click', closeDbSettings);
+$('btn-cancel-db').addEventListener('click', closeDbSettings);
+
+$('btn-save-db').addEventListener('click', async () => {
+  let url = $('db-url').value.trim();
+  const key = $('db-key').value.trim();
+  
+  // Clean URL if it has /rest/v1 or trailing slashes
+  if (url) {
+    url = url.replace(/\/rest\/v1\/?$/, ''); // remove /rest/v1/
+    url = url.replace(/\/+$/, ''); // remove trailing slash
+  }
+  
+  localStorage.setItem('supabase_url', url);
+  localStorage.setItem('supabase_key', key);
+  
+  closeDbSettings();
+  initSupabase();
+  
+  $('proc').classList.add('on');
+  $('proc-text').textContent = 'Synchronising database...';
+  try {
+    await loadEmployees();
+    renderEmp();
+    if ($('t-log').classList.contains('on')) {
+      await renderLog();
+    }
+    toast('Database connected & synced');
+  } catch (e) {
+    console.error(e);
+    toast('Error synchronising database');
+  }
+  $('proc').classList.remove('on');
+});
+
+/* ── init ── */
+async function initApp() {
+  initSupabase();
+  await loadEmployees();
+  renderEmp();
+  await renderLog();
+  loadModels();
+}
+initApp();
+
+})();
+</script>
+</body>
+</html>
